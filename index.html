@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能会计 Demo · 分步演示发票报销</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; padding: 2rem 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { border: none; border-radius: 1rem; box-shadow: 0 10px 30px rgba(0,0,0,0.08); margin-bottom: 1.5rem; }
+        .card-header { border-radius: 1rem 1rem 0 0 !important; font-weight: 600; }
+        .upload-area { border: 2px dashed #adb5bd; border-radius: 1rem; padding: 2rem 1rem; text-align: center; cursor: pointer; transition: background 0.2s; background: #f8f9fa; }
+        .upload-area:hover { border-color: #0d6efd; background: #e7f1ff; }
+        .preview-img { max-height: 250px; max-width: 100%; border-radius: 0.5rem; }
+        .voucher-wrapper { background: #fffef5; border: 1px solid #debb0d; border-radius: 8px; max-width: 460px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; }
+        .voucher-title { text-align: center; font-weight: 700; font-size: 1.4rem; letter-spacing: 6px; padding: 0.8rem 0 0.3rem; color: #b8860b; }
+        .voucher-meta { display: flex; justify-content: space-between; padding: 0.3rem 1.5rem 0.8rem; font-size: 0.85rem; color: #555; border-bottom: 1px dashed #debb0d; }
+        .voucher-summary { padding: 0.8rem 1.5rem 0.3rem; font-size: 0.9rem; font-weight: 500; color: #333; }
+        .voucher-entry { display: flex; justify-content: space-between; align-items: baseline; padding: 0.3rem 1.5rem; font-size: 0.95rem; }
+        .voucher-entry .account { color: #2c3e50; }
+        .voucher-entry .amount { font-weight: 600; min-width: 90px; text-align: right; }
+        .voucher-entry.credit { border-top: 1px solid rgba(0,0,0,0.05); }
+        .voucher-total { display: flex; justify-content: space-between; padding: 0.5rem 1.5rem; font-weight: 700; border-top: 2px solid #debb0d; margin-top: 0.3rem; font-size: 1rem; }
+        .voucher-footer { display: flex; justify-content: space-between; padding: 0.8rem 1.5rem; font-size: 0.8rem; color: #666; background: #fef9e7; border-top: 1px solid #e6d88a; }
+        .hidden { display: none; }
+        .step-buttons { margin-top: 1rem; display: flex; justify-content: flex-end; gap: 0.5rem; }
+        .btn-step { min-width: 120px; border-radius: 50px; font-weight: 500; }
+        .btn-fast { font-size: 1.3rem; padding: 0.8rem 2rem; border-radius: 50px; }
+        .error-block { background: #fff3f3; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 0.5rem; white-space: pre-wrap; font-family: 'Courier New', monospace; }
+        .warning-bar { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; border-radius: 0.5rem; padding: 0.8rem 1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="text-center mb-3">
+            <h1 class="display-5 fw-bold text-primary"><i class="fas fa-robot me-2"></i>智能会计 · 分步演示</h1>
+            <p class="lead text-muted">上传发票或选择快速演示，逐步查看识别、检查、凭证生成过程</p>
+        </div>
+        <div id="localFileWarning" class="warning-bar hidden">
+            <i class="fas fa-exclamation-triangle fs-5"></i>
+            <span>当前页面协议：<span id="protocolDisplay"></span>。云端API调用正常。</span>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <div class="card">
+                    <div class="card-header bg-success text-white"><i class="fas fa-bolt me-2"></i>快速演示（模拟滴滴发票）</div>
+                    <div class="card-body text-center">
+                        <p class="text-muted">无需上传，一键生成完整流程，便于讲解</p>
+                        <button class="btn btn-success btn-fast" onclick="useDemoData()"><i class="fas fa-play me-2"></i>开始快速演示</button>
+                    </div>
+                </div>
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white"><i class="fas fa-cloud-upload-alt me-2"></i>真实发票识别（云端API）</div>
+                    <div class="card-body">
+                        <div class="alert alert-info small py-2"><i class="fas fa-info-circle me-1"></i>使用百度云OCR，请先 <a href="https://console.bce.baidu.com/ai/#/ai/ocr/overview/index" target="_blank">免费申请API Key</a></div>
+                        <div class="mb-2"><label class="form-label small">API Key</label><input type="text" class="form-control form-control-sm" id="apiKeyInput" placeholder="填写API Key"></div>
+                        <div class="mb-2"><label class="form-label small">Secret Key</label><input type="text" class="form-control form-control-sm" id="secretKeyInput" placeholder="填写Secret Key"></div>
+                        <div id="uploadContainer" class="upload-area" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-file-image fa-2x text-secondary mb-2"></i>
+                            <p class="mb-1 fw-bold">点击或拖拽上传发票</p>
+                            <p class="text-muted small">JPG / PNG / PDF（仅首页）</p>
+                            <input type="file" id="fileInput" accept="image/jpeg,image/png,application/pdf" hidden />
+                        </div>
+                        <div id="previewContainer" class="text-center hidden mt-3">
+                            <img id="previewImage" class="preview-img" alt="预览" />
+                            <canvas id="previewCanvas" class="hidden" style="max-height:250px; max-width:100%;"></canvas>
+                            <p id="fileName" class="text-muted small"></p>
+                        </div>
+                        <button id="btnCloudOCR" class="btn btn-info mt-3 w-100" onclick="startCloudOCR()" disabled><i class="fas fa-search me-1"></i> 云端识别上传的发票</button>
+                        <div id="ocrProgress" class="hidden mt-2"><small class="text-muted" id="ocrStatus">正在调用云端OCR...</small></div>
+                    </div>
+                </div>
+                <div class="card mt-3 hidden" id="rawTextCard">
+                    <div class="card-header bg-secondary text-white"><i class="fas fa-align-left me-2"></i>OCR 识别结果</div>
+                    <div class="card-body"><div id="rawTextDisplay" style="max-height:200px; overflow-y:auto; background:#212529; color:#f8f9fa; padding:1rem; border-radius:0.5rem; white-space: pre-wrap;"></div></div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div id="step1Result" class="card hidden">
+                    <div class="card-header bg-primary text-white"><i class="fas fa-search me-2"></i>步骤1：发票信息提取</div>
+                    <div class="card-body"><table class="table table-bordered table-hover"><tbody id="fieldTable"></tbody></table><div class="step-buttons" id="step1Buttons"></div></div>
+                </div>
+                <div id="step2Result" class="card hidden">
+                    <div class="card-header bg-warning text-dark"><i class="fas fa-check-double me-2"></i>步骤2：合规性自动检查</div>
+                    <div class="card-body"><div id="checkResultText"></div><div class="step-buttons" id="step2Buttons"></div></div>
+                </div>
+                <div id="step3Result" class="card hidden">
+                    <div class="card-header bg-info text-white"><i class="fas fa-code me-2"></i>步骤3：结构化发票数据（JSON）</div>
+                    <div class="card-body"><pre id="jsonDisplay"></pre><div class="step-buttons" id="step3Buttons"></div></div>
+                </div>
+                <div id="step4Result" class="card hidden">
+                    <div class="card-header bg-success text-white"><i class="fas fa-file-invoice me-2"></i>步骤4：自动生成记账凭证</div>
+                    <div class="card-body d-flex justify-content-center"><div id="voucherDisplay"></div></div><div class="step-buttons" id="step4Buttons"></div>
+                </div>
+            </div>
+        </div>
+        <footer class="text-center text-muted mt-5"><small>© 2026 智能财务教学演示 · 分步引导模式</small></footer>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        document.getElementById('protocolDisplay').textContent = window.location.protocol;
+
+        const COMPANY_NAME = "上海智能科技有限公司";
+        const COMPANY_TAX_ID = "91310000MA1K36XXXX";
+        const MAX_DAYS = 30;
+        const MAX_AMOUNT = 500;
+        const TODAY = new Date(2026, 4, 1);
+        const reimbursedInvoices = new Set();
+
+        const DEMO_OCR_TEXT = `电子普通发票\n发票代码：044002200111\n发票号码：66982012\n开票日期：2026年04月28日\n购买方：上海智能科技有限公司\n纳税人识别号：91310000MA1K36XXXX\n销售方：滴滴出行科技有限公司\n项目：*运输服务*客运服务费\n金额：28.30\n税率：3%\n税额：0.85\n价税合计：29.15\n备注：行程日期2026-04-27 08:30-08:55，起点：陆家嘴，终点：南京东路`;
+
+        let currentStepData = { fields: null, issues: null, structured: null, voucher: null, ocrText: null };
+        let currentStep = 0;
+        const uploadContainer = document.getElementById('uploadContainer');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const previewCanvas = document.getElementById('previewCanvas');
+        const fileName = document.getElementById('fileName');
+        const btnCloudOCR = document.getElementById('btnCloudOCR');
+        let selectedFile = null;
+
+        document.getElementById('fileInput').addEventListener('change', (e) => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+        uploadContainer.addEventListener('dragover', e => e.preventDefault());
+        uploadContainer.addEventListener('drop', e => { e.preventDefault(); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+        function handleFile(file) {
+            resetAll();
+            selectedFile = file;
+            fileName.textContent = file.name;
+            previewContainer.classList.remove('hidden');
+            uploadContainer.classList.add('hidden');
+            btnCloudOCR.disabled = false;
+            const reader = new FileReader();
+            if(file.type === 'application/pdf'){
+                reader.onload = function(ev){
+                    const typedarray = new Uint8Array(ev.target.result);
+                    pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                        pdf.getPage(1).then(page => {
+                            const viewport = page.getViewport({scale:1.5});
+                            const canvas = previewCanvas;
+                            canvas.width = viewport.width;
+                            canvas.height = viewport.height;
+                            canvas.classList.remove('hidden');
+                            previewImage.classList.add('hidden');
+                            const ctx = canvas.getContext('2d');
+                            page.render({canvasContext: ctx, viewport: viewport});
+                        });
+                    }).catch(err => showError('PDF解析失败：'+err.message));
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                reader.onload = ev => { previewImage.src = ev.target.result; previewImage.classList.remove('hidden'); previewCanvas.classList.add('hidden'); };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function useDemoData() {
+            resetAll();
+            processOcrText(DEMO_OCR_TEXT);
+        }
+
+        async function startCloudOCR() {
+            const apiKey = document.getElementById('apiKeyInput').value.trim();
+            const secretKey = document.getElementById('secretKeyInput').value.trim();
+            if(!apiKey || !secretKey){ showError('请先填写百度云 API Key 和 Secret Key'); return; }
+            if(!selectedFile) return;
+            btnCloudOCR.disabled = true;
+            document.getElementById('ocrProgress').classList.remove('hidden');
+            document.getElementById('ocrStatus').textContent = '正在获取 access_token...';
+            try {
+                const tokenRes = await fetch(`https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`, {method:'POST'});
+                if(!tokenRes.ok) throw new Error('获取token失败，HTTP状态：'+tokenRes.status);
+                const tokenJson = await tokenRes.json();
+                if(!tokenJson.access_token) throw new Error('获取token失败：'+(tokenJson.error_description||'请检查API Key/Secret'));
+                const accessToken = tokenJson.access_token;
+                document.getElementById('ocrStatus').textContent = '正在上传图片识别...';
+                let base64Image = await fileToBase64(selectedFile);
+                const formData = new URLSearchParams();
+                formData.append('image', base64Image);
+                const ocrRes = await fetch(`https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token=${accessToken}`, {method:'POST', body:formData});
+                if(!ocrRes.ok) throw new Error('OCR请求失败，HTTP状态：'+ocrRes.status);
+                const ocrJson = await ocrRes.json();
+                if(ocrJson.error_code) throw new Error(`OCR识别失败（错误码${ocrJson.error_code}）：${ocrJson.error_msg}`);
+                if(!ocrJson.words_result || ocrJson.words_result.length===0) throw new Error('OCR未识别到任何文字');
+                const words = ocrJson.words_result.map(item=>item.words).join('\n');
+                document.getElementById('ocrProgress').classList.add('hidden');
+                btnCloudOCR.disabled = false;
+                processOcrText(words);
+            } catch(err){
+                console.error(err);
+                document.getElementById('ocrProgress').classList.add('hidden');
+                btnCloudOCR.disabled = false;
+                showError('云端识别失败：'+err.message);
+            }
+        }
+
+        async function fileToBase64(file) {
+            if(file.type === 'application/pdf'){
+                const canvas = previewCanvas;
+                if(canvas.classList.contains('hidden')) throw new Error('PDF预览未就绪');
+                return canvas.toDataURL('image/jpeg',0.8).split(',')[1];
+            } else {
+                return new Promise((resolve,reject)=>{
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('rawTextCard').classList.remove('hidden');
+            document.getElementById('rawTextDisplay').innerHTML = `<div class="error-block"><i class="fas fa-exclamation-circle me-2"></i>${msg.replace(/\n/g,'<br>')}</div>`;
+            resetStepCards();
+        }
+
+        function resetStepCards() {
+            ['step1Result','step2Result','step3Result','step4Result'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+        }
+
+        function processOcrText(text) {
+            document.getElementById('rawTextDisplay').innerHTML = `<pre style="margin:0;background:transparent;color:inherit;">${text.trim()}</pre>`;
+            document.getElementById('rawTextCard').classList.remove('hidden');
+            const fields = extractInvoiceFields(text);
+            const issues = checkInvoice(fields);
+            const structured = buildStructuredInvoice(fields);
+            const voucherHtml = generateVoucherHtml(fields);
+            if(issues.length===0 && fields.invoice_number) reimbursedInvoices.add(fields.invoice_number);
+            currentStepData = { fields, issues, structured, voucher: voucherHtml, ocrText: text };
+            currentStep = 0;
+            showStep(1);
+        }
+
+        function resetAll() {
+            resetStepCards();
+            document.getElementById('rawTextCard').classList.add('hidden');
+            reimbursedInvoices.clear();
+            currentStepData = { fields: null, issues: null, structured: null, voucher: null, ocrText: null };
+            currentStep = 0;
+        }
+
+        function showStep(n) {
+            ['step1Result','step2Result','step3Result','step4Result'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+            document.getElementById('step'+n+'Result').classList.remove('hidden');
+            populateStepContent(n);
+            configStepButtons(n);
+            currentStep = n;
+        }
+
+        function populateStepContent(step) {
+            const data = currentStepData;
+            if(!data.fields && step>0) return;
+            switch(step){
+                case 1: populateFieldsTable(data.fields); break;
+                case 2: populateCheckResult(data.issues, data.fields); break;
+                case 3: document.getElementById('jsonDisplay').textContent = JSON.stringify(data.structured,null,2); break;
+                case 4: document.getElementById('voucherDisplay').innerHTML = data.voucher; break;
+            }
+        }
+
+        function configStepButtons(step) {
+            ['step1Buttons','step2Buttons','step3Buttons','step4Buttons'].forEach(id=>document.getElementById(id).innerHTML='');
+            const container = document.getElementById('step'+step+'Buttons');
+            container.innerHTML = step<4 ? '<button class="btn btn-primary btn-step" onclick="goToNextStep()"><i class="fas fa-arrow-right me-1"></i>下一步</button>' : '<button class="btn btn-outline-secondary btn-step" onclick="resetAll()"><i class="fas fa-redo me-1"></i>重新开始</button>';
+        }
+
+        function goToNextStep() { if(currentStep<4) showStep(currentStep+1); }
+
+        function populateFieldsTable(fields) {
+            const names = { invoice_code:'发票代码',invoice_number:'发票号码',invoice_date:'开票日期',buyer_name:'购买方名称',buyer_tax_id:'纳税人识别号',seller_name:'销售方名称',item:'项目',amount:'金额',tax_rate:'税率(%)',tax_amount:'税额',total_amount:'价税合计',trip_date:'行程日期',trip_start:'起点',trip_end:'终点' };
+            let html='';
+            for(let [k,label] of Object.entries(names)){
+                let val = fields[k];
+                if(val instanceof Date) val = val.toLocaleDateString('zh-CN');
+                else if(typeof val==='number') val = val.toFixed(2);
+                else if(!val) val = '<span class="text-muted">未识别</span>';
+                html += `<tr><td class="fw-bold">${label}</td><td>${val}</td></tr>`;
+            }
+            document.getElementById('fieldTable').innerHTML = html;
+        }
+
+        function populateCheckResult(issues, fields) {
+            const div = document.getElementById('checkResultText');
+            const header = document.querySelector('#step2Result .card-header');
+            if(issues.length===0){
+                div.innerHTML = `<div class="d-flex"><i class="fas fa-check-circle text-success fs-3 me-3"></i><div><span class="text-success fw-bold">✓ 全部通过，允许报销</span><br><small>发票号：${fields.invoice_number||'未知'} | 金额：${fields.total_amount?.toFixed(2)||'0.00'} 元</small></div></div>`;
+                header.className = 'card-header bg-success text-white';
+            } else {
+                const list = issues.map(i=>`<li>${i}</li>`).join('');
+                div.innerHTML = `<div class="d-flex"><i class="fas fa-times-circle text-danger fs-3 me-3"></i><div><span class="text-danger fw-bold">✗ ${issues.length}个问题</span><ul>${list}</ul></div></div>`;
+                header.className = 'card-header bg-danger text-white';
+            }
+        }
+
+        function extractInvoiceFields(text) {
+            const fields = {};
+            const patterns = {
+                invoice_code: /发票代码[:：]\s*(\d{12})/,
+                invoice_number: /发票号码[:：]\s*(\d{8})/,
+                invoice_date: /开票日期[:：]\s*(\d{4})年(\d{2})月(\d{2})日/,
+                buyer_name: /购买方[:：]\s*(.+)/,
+                buyer_tax_id: /纳税人识别号[:：]\s*([A-Z0-9]{18})/,
+                seller_name: /销售方[:：]\s*(.+)/,
+                item: /项目[:：]\s*(.+)/,
+                amount: /金额[:：]\s*([\d.]+)/,
+                tax_rate: /税率[:：]\s*([\d.]+)%/,
+                tax_amount: /税额[:：]\s*([\d.]+)/,
+                total_amount: /价税合计[:：]\s*([\d.]+)/,
+                trip_date: /行程日期(\d{4}-\d{2}-\d{2})/,
+                trip_start: /起点[:：](.*?)，/,
+                trip_end: /终点[:：](.*)/
+            };
+            for(let [k,re] of Object.entries(patterns)){
+                const m = text.match(re);
+                if(m){
+                    if(k==='invoice_date') fields[k] = new Date(+m[1],+m[2]-1,+m[3]);
+                    else if(k==='trip_date') fields[k] = new Date(m[1]);
+                    else if(['amount','tax_rate','tax_amount','total_amount'].includes(k)) fields[k] = parseFloat(m[1]);
+                    else fields[k] = m[1].trim();
+                }
+            }
+            return fields;
+        }
+
+        function checkInvoice(fields) {
+            const issues = [];
+            if(fields.buyer_name !== COMPANY_NAME) issues.push(`购买方名称不匹配：期望“${COMPANY_NAME}”，实际“${fields.buyer_name||'未识别'}”`);
+            if(fields.buyer_tax_id !== COMPANY_TAX_ID) issues.push('纳税人识别号错误');
+            if(!fields.invoice_date) issues.push('未提取到开票日期');
+            else {
+                const diff = Math.floor((TODAY - fields.invoice_date)/86400000);
+                if(diff>MAX_DAYS || diff<0) issues.push(`开票日期超出${MAX_DAYS}天范围`);
+            }
+            if(fields.total_amount > MAX_AMOUNT) issues.push('金额超限');
+            if(fields.invoice_number && reimbursedInvoices.has(fields.invoice_number)) issues.push('重复报销');
+            return issues;
+        }
+
+        function buildStructuredInvoice(fields) {
+            return {
+                invoice_type: "增值税电子普通发票",
+                invoice_code: fields.invoice_code || '',
+                invoice_number: fields.invoice_number || '',
+                invoice_date: fields.invoice_date ? fields.invoice_date.toISOString().slice(0,10) : '',
+                buyer: { name: fields.buyer_name||'', tax_id: fields.buyer_tax_id||'' },
+                seller: { name: fields.seller_name||'' },
+                service: {
+                    description: fields.item || '',
+                    amount: fields.amount || 0,
+                    tax_rate: (fields.tax_rate||0)/100,
+                    tax_amount: fields.tax_amount || 0,
+                    total_amount: fields.total_amount || 0
+                },
+                trip_info: {
+                    date: fields.trip_date ? fields.trip_date.toISOString().slice(0,10) : '',
+                    start: fields.trip_start || '',
+                    end: fields.trip_end || ''
+                }
+            };
+        }
+
+        function generateVoucherHtml(fields) {
+            const amount = fields.amount||0, tax = fields.tax_amount||0, total = fields.total_amount||(amount+tax);
+            const trip = `${fields.trip_start||'?'}→${fields.trip_end||'?'}`;
+            const date = fields.invoice_date ? fields.invoice_date.toLocaleDateString('zh-CN') : '未知';
+            const summary = `报销${date}滴滴打车费（${trip}）`;
+            return `
+            <div class="voucher-wrapper">
+                <div class="voucher-title">记 账 凭 证</div>
+                <div class="voucher-meta"><span>凭证编号：20260501001</span><span>日期：${date}</span></div>
+                <div class="voucher-summary">摘要：${summary}</div>
+                <div class="voucher-entry"><span class="account">借：管理费用－差旅费</span><span class="amount">${amount.toFixed(2)} 元</span></div>
+                <div class="voucher-entry"><span class="account">　　应交税费－应交增值税（进项税额）</span><span class="amount">${tax.toFixed(2)} 元</span></div>
+                <div class="voucher-entry credit"><span class="account">贷：银行存款</span><span class="amount">${total.toFixed(2)} 元</span></div>
+                <div class="voucher-total"><span>金额合计</span><span>${total.toFixed(2)} 元</span></div>
+                <div class="voucher-footer"><span>附单据：1张</span><span>制单人：智能会计系统</span><span>审核人：</span></div>
+            </div>`;
+        }
+    </script>
+</body>
+</html>
