@@ -172,7 +172,8 @@
             document.getElementById('ocrProgress').classList.remove('hidden');
             document.getElementById('ocrStatus').textContent = '正在获取 access_token...';
             try {
-                const tokenRes = await fetch(`https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`, {method:'POST'});
+                // 修复：采用 GET 方法避免 CORS 预检
+                const tokenRes = await fetch(`https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`);
                 if(!tokenRes.ok) throw new Error('获取token失败，HTTP状态：'+tokenRes.status);
                 const tokenJson = await tokenRes.json();
                 if(!tokenJson.access_token) throw new Error('获取token失败：'+(tokenJson.error_description||'请检查API Key/Secret'));
